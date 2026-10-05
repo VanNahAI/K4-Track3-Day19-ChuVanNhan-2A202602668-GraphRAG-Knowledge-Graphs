@@ -66,8 +66,9 @@ def make_llm():
         llm = llm_mod.MeteredLLM()
     except (RuntimeError, ImportError) as error:
         fail("SETUP-1", f"Chưa dùng được provider LLM: {error}",
-             "copy .env.example thành .env, điền ít nhất một key: OPENAI_API_KEY, OPENROUTER_API_KEY, "
-             "GEMINI_API_KEY hoặc ANTHROPIC_API_KEY (Anthropic chỉ dùng cho chat; embedding cần một trong 3 key đầu).")
+             "copy .env.example thành .env, điền OLLAMA_API_KEY cho chat Ollama Cloud và thêm "
+             "OPENAI_API_KEY, OPENROUTER_API_KEY hoặc GEMINI_API_KEY cho embedding. "
+             "Provider chat khác: OPENAI_API_KEY, OPENROUTER_API_KEY, GEMINI_API_KEY hoặc ANTHROPIC_API_KEY.")
     print(f"[provider] chat = {llm.chat_model} | embedding = {llm.embedding_model}")
     return llm
 

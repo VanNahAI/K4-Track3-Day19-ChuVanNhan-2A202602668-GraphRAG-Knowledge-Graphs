@@ -25,7 +25,7 @@ Làm **đúng thứ tự**. Mỗi bước có **lệnh kiểm tra** và **dấu 
 
 ## Bước 0 — Setup
 
-**Cần có:** Python 3.11, Docker Desktop (đang chạy), và ít nhất một API key: OpenAI (khuyên dùng), OpenRouter, Gemini hoặc Anthropic. Anthropic chỉ dùng cho chat; embedding cần OpenAI/OpenRouter/Gemini.
+**Cần có:** Python 3.11, Docker Desktop (đang chạy), key Ollama Cloud cho chat và key OpenAI/OpenRouter/Gemini cho embedding. Có thể chọn OpenAI/OpenRouter/Gemini cho cả chat và embedding; Anthropic chỉ dùng chat.
 
 > **Bật Docker Desktop trước** mỗi khi chạy lệnh `docker run` / `docker start neo4j-drug-kg` (kể cả mỗi lần mở lại máy). Đợi biểu tượng Docker chuyển xanh rồi mới chạy. Nếu chưa bật, lệnh báo `cannot connect to the Docker daemon`.
 
@@ -45,22 +45,39 @@ copy .env.example .env             # macOS/Linux: cp .env.example .env
 
 ### Chọn provider
 
-Provider chính và rẻ nhất cho baseline là **OpenAI**. OpenRouter, Gemini và Anthropic là phương án dự phòng. `bench_kg.py` in provider thực tế ở đầu mỗi lần chạy để số liệu benchmark không bị lẫn.
+#### Embedding local miễn phí API
+
+Cài Ollama từ https://ollama.com/download/windows, rồi chạy `ollama pull bge-m3`. Giữ Ollama chạy tại `http://localhost:11434`. Cấu hình chat vẫn ở Ollama Cloud, embedding chạy trên máy:
+
+```dotenv
+LLM_PROVIDER=ollama
+OLLAMA_CHAT_MODEL=gpt-oss:120b
+OLLAMA_API_KEY=your_ollama_api_key
+EMBEDDING_PROVIDER=ollama_local
+OLLAMA_LOCAL_EMBEDDING_MODEL=bge-m3
+```
+
+Không cần key Gemini/OpenAI cho cấu hình này. Local embedding không gửi văn bản ra cloud; chat vẫn gửi prompt tới Ollama Cloud. Chi phí embedding USD = 0 không tính điện/phần cứng. Khi đổi model phải dựng lại vector store, không dùng chung vector từ Gemini và bge-m3. `ollama_local` chỉ được chọn khi cấu hình rõ, không thay đổi thứ tự tự chọn cloud provider.
+
+
+Cấu hình mẫu dùng **Ollama Cloud `gpt-oss:120b`** cho chat qua `https://ollama.com/v1`, không cần cài Ollama. Tạo key tại https://ollama.com/settings/keys. Embedding vẫn cần key OpenAI/OpenRouter/Gemini riêng; Ollama Cloud không có model embedding trong danh sách hiện tại. `gpt-oss` không phải GPT-4o/GPT-5. `bench_kg.py` in provider thực tế ở đầu mỗi lần chạy để số liệu benchmark không bị lẫn. Chi phí USD của Ollama hiển thị 0 vì chưa quy đổi phí gói/quota sang token, không có nghĩa dịch vụ miễn phí.
 
 | Provider chat | Key trong `.env` | Model mặc định | Embedding dùng |
 | --- | --- | --- | --- |
-| **OpenAI (chính)** | `OPENAI_API_KEY` | `gpt-4o-mini` | OpenAI `text-embedding-3-small` |
+| **Ollama Cloud** | `OLLAMA_API_KEY` | `gpt-oss:120b` | Key OpenAI/OpenRouter/Gemini riêng |
+| OpenAI | `OPENAI_API_KEY` | `gpt-4o-mini` | OpenAI `text-embedding-3-small` |
 | OpenRouter | `OPENROUTER_API_KEY` | `openai/gpt-4o-mini` | OpenRouter `openai/text-embedding-3-small` |
 | Gemini | `GEMINI_API_KEY` | `gemini-2.5-flash-lite` | Gemini `gemini-embedding-001` |
 | Anthropic | `ANTHROPIC_API_KEY` | `claude-opus-5-5` | **Không có embedding API**: phải thêm key OpenAI/OpenRouter/Gemini |
 
-Nếu có nhiều key, tự động ưu tiên: **OpenAI → OpenRouter → Gemini → Anthropic**. Muốn ép provider:
+Nếu không đặt `LLM_PROVIDER`, tự động ưu tiên: **Ollama → OpenAI → OpenRouter → Gemini → Anthropic**. Embedding chỉ chọn OpenAI/OpenRouter/Gemini. Mẫu `.env` (thay placeholder bằng key thật trên máy, không commit):
 
 ```dotenv
-LLM_PROVIDER=anthropic
-EMBEDDING_PROVIDER=gemini
-ANTHROPIC_API_KEY=...
-GEMINI_API_KEY=...
+LLM_PROVIDER=ollama
+OLLAMA_CHAT_MODEL=gpt-oss:120b
+OLLAMA_API_KEY=your_ollama_api_key
+EMBEDDING_PROVIDER=openai
+OPENAI_API_KEY=your_openai_api_key
 ```
 
 Một lần benchmark chỉ dùng **một chat provider** và **một embedding provider**, không tự chuyển giữa chừng; như vậy cost/quality so sánh được. Không mix kết quả từ provider khác nhau trong cùng một bảng báo cáo. Giá USD là ước tính theo bảng trong `src/llm.py`; kiểm tra bảng giá provider trước khi báo cáo chính thức.

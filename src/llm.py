@@ -2,8 +2,9 @@
 
 Providers (pick with env vars, otherwise the first one in PROVIDER_ORDER that has an API key wins):
 
-    LLM_PROVIDER        = openai | openrouter | gemini | anthropic    (chat)
-    EMBEDDING_PROVIDER  = openai | openrouter | gemini                (Anthropic has no embedding API)
+    LLM_PROVIDER        = ollama | openai | openrouter | gemini | anthropic (chat)
+    EMBEDDING_PROVIDER  = ollama_local | openai | openrouter | gemini (Cloud Ollama/Anthropic: chat-only)
+    ollama_local uses http://localhost:11434/v1 without an API key; select it explicitly.
     <PROVIDER>_CHAT_MODEL / <PROVIDER>_EMBEDDING_MODEL override the default models below.
 
 One run uses one provider for the whole benchmark — no mid-run failover, so cost/quality numbers stay comparable.
@@ -18,6 +19,10 @@ from dataclasses import dataclass, fields
 from typing import Any
 
 PROVIDERS = {
+    "ollama_local": {"key": None, "base_url": "http://localhost:11434/v1",
+                     "chat": "gpt-oss:20b", "embed": "bge-m3"},
+    "ollama": {"key": "OLLAMA_API_KEY", "base_url": "https://ollama.com/v1",
+               "chat": "gpt-oss:120b", "embed": None},
     "openai": {"key": "OPENAI_API_KEY", "base_url": None,
                "chat": "gpt-4o-mini", "embed": "text-embedding-3-small"},
     "openrouter": {"key": "OPENROUTER_API_KEY", "base_url": "https://openrouter.ai/api/v1",
@@ -27,7 +32,9 @@ PROVIDERS = {
     "anthropic": {"key": "ANTHROPIC_API_KEY", "base_url": None,
                   "chat": "claude-opus-5-5", "embed": None},
 }
-PROVIDER_ORDER = ["openai", "openrouter", "gemini", "anthropic"]
+PROVIDER_ORDER = ["ollama", "openai", "openrouter", "gemini", "anthropic"]
+
+# Ollama Cloud uses plan quotas, not per-token billing; its USD estimate remains 0.
 
 # USD per 1M tokens (input, output). Check each provider's pricing page before reporting real numbers.
 PRICES_PER_M = {
@@ -63,18 +70,18 @@ def price(model: str, input_tokens: int, output_tokens: int = 0) -> float:
 
 def pick_provider(env_var: str, need_embeddings: bool) -> str:
     """Explicit env choice, else the first provider (in PROVIDER_ORDER) whose API key is set."""
-    usable = [p for p in PROVIDER_ORDER if not need_embeddings or PROVIDERS[p]["embed"]]
+    usable = [p for p in PROVIDERS if not need_embeddings or PROVIDERS[p]["embed"]]
     chosen = os.getenv(env_var, "").strip().lower()
     if chosen:
         if chosen not in usable:
             raise RuntimeError(f"{env_var}={chosen} không hợp lệ; chọn một trong: {', '.join(usable)}")
-        if not os.getenv(PROVIDERS[chosen]["key"]):
+        if PROVIDERS[chosen]["key"] and not os.getenv(PROVIDERS[chosen]["key"]):
             raise RuntimeError(f"{env_var}={chosen} nhưng chưa có {PROVIDERS[chosen]['key']} trong .env")
         return chosen
-    for provider in usable:
-        if os.getenv(PROVIDERS[provider]["key"]):
+    for provider in PROVIDER_ORDER:
+        if provider in usable and os.getenv(PROVIDERS[provider]["key"]):
             return provider
-    keys = " / ".join(PROVIDERS[p]["key"] for p in usable)
+    keys = " / ".join(PROVIDERS[p]["key"] for p in usable if PROVIDERS[p]["key"])
     raise RuntimeError(f"Chưa có API key nào cho {'embedding' if need_embeddings else 'chat'}: cần một trong {keys}")
 
 def _strip_fences(text: str) -> str:
@@ -89,7 +96,8 @@ def _openai_client(provider: str):
     from openai import OpenAI
 
     cfg = PROVIDERS[provider]
-    return OpenAI(api_key=os.environ[cfg["key"]], base_url=cfg["base_url"])
+    return OpenAI(api_key=os.environ[cfg["key"]] if cfg["key"] else "ollama",
+                  base_url=cfg["base_url"])
 
 class MeteredLLM:
     """`chat` and `embed` are drop-in `llm_fn` / `embedding_fn`; `usage` accumulates across calls."""
